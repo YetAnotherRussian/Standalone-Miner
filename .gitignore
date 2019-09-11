@@ -1,0 +1,8 @@
+
+*.tlog
+*.log
+*.user
+*.ipch
+*.db
+*.suo
+*.txt

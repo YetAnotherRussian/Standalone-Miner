@@ -11,9 +11,6 @@
 #include "ecc.h"
 #include "base58.h"
 
-uint8_t rpriv[ECC_BYTES];
-uint8_t rpub[ECC_BYTES+1];
-
 float approx_sqrt(float n)
 {
     long i;
@@ -112,7 +109,7 @@ uint64_t isSubGenesisAddress(uint8_t *a)
         const double mn = 4.166666667;
         const uint64_t rv = (uint64_t)mfloor(( 1000 + ( 10000*(1-(ra*mn)) ) )+0.5);
         
-        printf("\nsubG: %.8f - %.8f - %.8f - %.8f - %.3f VFC < %.3f\n", a1, a2, a3, a4, toDB(rv), ra);
+        printf("subG: %.8f - %.8f - %.8f - %.8f - %.3f VFC < %.3f\n\n", a1, a2, a3, a4, toDB(rv), ra);
         
         return rv;
     }
@@ -125,81 +122,24 @@ uint64_t isSubGenesisAddress(uint8_t *a)
 
 }
 
-double subDiff(uint8_t *a)
-{
-    vec3 v[5]; //Vectors
-
-    uint8_t *ofs = a;
-    memcpy(&v[0].x, ofs, sizeof(uint16_t));
-    memcpy(&v[0].y, ofs + sizeof(uint16_t), sizeof(uint16_t));
-    memcpy(&v[0].z, ofs + (sizeof(uint16_t)*2), sizeof(uint16_t));
-
-    ofs = ofs + (sizeof(uint16_t)*3);
-    memcpy(&v[1].x, ofs, sizeof(uint16_t));
-    memcpy(&v[1].y, ofs + sizeof(uint16_t), sizeof(uint16_t));
-    memcpy(&v[1].z, ofs + (sizeof(uint16_t)*2), sizeof(uint16_t));
-
-    ofs = ofs + (sizeof(uint16_t)*3);
-    memcpy(&v[2].x, ofs, sizeof(uint16_t));
-    memcpy(&v[2].y, ofs + sizeof(uint16_t), sizeof(uint16_t));
-    memcpy(&v[2].z, ofs + (sizeof(uint16_t)*2), sizeof(uint16_t));
-
-    ofs = ofs + (sizeof(uint16_t)*3);
-    memcpy(&v[3].x, ofs, sizeof(uint16_t));
-    memcpy(&v[3].y, ofs + sizeof(uint16_t), sizeof(uint16_t));
-    memcpy(&v[3].z, ofs + (sizeof(uint16_t)*2), sizeof(uint16_t));
-
-    ofs = ofs + (sizeof(uint16_t)*3);
-    memcpy(&v[4].x, ofs, sizeof(uint16_t));
-    memcpy(&v[4].y, ofs + sizeof(uint16_t), sizeof(uint16_t));
-    memcpy(&v[4].z, ofs + (sizeof(uint16_t)*2), sizeof(uint16_t));
-
-    const double a1 = gNa(&v[0], &v[3]);
-    const double a2 = gNa(&v[3], &v[2]);
-    const double a3 = gNa(&v[2], &v[1]);
-    const double a4 = gNa(&v[1], &v[4]);
-
-    //printf("%.3f - %.3f - %.3f - %.3f\n", a1,a2,a3,a4);
-    double diff = a1;
-    if(a2 > diff)
-        diff = a2;
-    if(a3 > diff)
-        diff = a3;
-    if(a4 > diff)
-        diff = a4;
-    return diff;
-}
-
-
 int main()
 {
     printf("Please wait, minted keys are saved to minted.txt, difficulty 0.24 ...\n");
-
-    //Save reward addr used today
-    ecc_make_key(rpub, rpriv);
-    FILE* f = fopen("reward.txt", "a");
-    if(f != NULL)
-    {
-        char bpriv[256];
-        memset(bpriv, 0, sizeof(bpriv));
-        size_t len = sizeof(bpriv);
-        b58enc(bpriv, &len, rpriv, ECC_CURVE);
-        fprintf(f, "%s\n", bpriv);
-        fclose(f);
-    }
     
+	//Uncomment BOTH 2 LINES below and set the number of threads manually if needed (e.g. wanna mine & work together)
+	//omp_set_dynamic(0); //Override auto thread count
+	//omp_set_num_threads(16); //Set the number of threads here
+
     #pragma omp parallel
-    //#pragma omp target teams distribute parallel for
-    //for(int i=0; i < 2048; ++i) 
-    while(1)
+    for(int i=0; i < 2048; ++i) 
     {
-        //i=0;
+        i=0;
         int tid = omp_get_thread_num();
         int nthreads;
         if(tid == 0)
         {
             nthreads = omp_get_num_threads();
-            printf("Number of threads: %d\n", nthreads);
+            printf("Number of threads: %d\n", omp_get_num_threads());
         }
         
         time_t nt = time(0)+16;
@@ -229,46 +169,13 @@ int main()
                 size_t len = 256;
                 b58enc(bpriv, &len, priv, ECC_BYTES);
 
-                char bpub[256];
-                memset(bpub, 0, sizeof(bpub));
-                len = 256;
-                b58enc(bpub, &len, pub, ECC_BYTES+1);
-
-                char brpriv[256];
-                memset(brpriv, 0, sizeof(brpriv));
-                len = 256;
-                b58enc(brpriv, &len, rpriv, ECC_BYTES);
-
-                char brpub[256];
-                memset(brpub, 0, sizeof(brpub));
-                len = 256;
-                b58enc(brpub, &len, rpub, ECC_BYTES+1);
-
-                const double diff = subDiff(pub);
                 const double fr = toDB(r);
-
-                //Log in console
-                printf("Private Key: %s (%.3f DIFF) (%.3f VFC)\n\n", bpriv, diff, fr);
-
-                //Try to claim
-                char cmd[2048];
-                sprintf(cmd, "wget -qO- \"https://vfcash.uk/rest.php?fromprivfast=%s&frompub=%s&topub=%s&amount=%.3f\"", bpriv, bpub, brpub, fr);
-                if(system(cmd) != -1)
-                    printf("\n%s\n", cmd);
-
-                //Log claim url
-                FILE* f = fopen("trans.txt", "a");
-                if(f != NULL)
-                {
-                    fprintf(f, "https://vfcash.uk/rest.php?fromprivfast=%s&frompub=%s&topub=%s&amount=%.3f\n", bpriv, bpub, brpub, fr);
-                    fclose(f);
-                }
+                printf("Private Key: %s (%.3f)\n\n", bpriv, fr);
                 
-                //Log in minted
-                f = fopen("minted.txt", "a");
+                FILE* f = fopen("minted.txt", "a");
                 if(f != NULL)
                 {
-                    fprintf(f, "%s / %.3f / %.3f\n", bpriv, diff, fr);
+                    fprintf(f, "%s / %.3f\n", bpriv, fr);
                     fclose(f);
                 }
             }
